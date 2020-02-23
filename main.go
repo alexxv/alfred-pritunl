@@ -11,9 +11,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"encoding/json"
+	"io/ioutil"
 
 	"github.com/cghdev/gotunl"
-	aw "github.com/deanishe/awgo"
+	"github.com/deanishe/awgo"
 	"github.com/tidwall/gjson"
 )
 
@@ -83,28 +85,16 @@ func disconnect(gt *gotunl.Gotunl, id string) {
 func connect(gt *gotunl.Gotunl, id string) {
 	for pid, p := range gt.Profiles {
 		name := gjson.Get(p.Conf, "name").String()
-		if id == name || id == strconv.Itoa(p.ID) {
-			_, auth := gt.GetProfile(pid)
-			user := ""
-			password := ""
-			if auth != "" {
-				if auth[len(auth)-3:] == "pin" {
-					var otp string
-					user = "pritunl"
-					pass := popup("Enter the PIN: ", true)
-					if auth == "otp_pin" {
-						otp = popup("Enter the OTP code: ", false)
-					}
-					password = string(pass) + otp
-				}
-				if user == "" {
-					user = popup("Enter the username: ", false)
-				}
-				if password == "" {
-					password = popup("Enter the password: ", true)
-				}
-			}
-			gt.ConnectProfile(pid, user, password)
+		if id == name || id == strconv.Itoa(p.ID) {			
+
+			creds := loadCreds()
+			if creds.Username == "" {
+				creds.Username = popup("Enter the username: ", false)
+				creds.Password = popup("Enter the password: ", false)
+				saveCreds(creds)
+			} 
+
+			gt.ConnectProfile(pid, creds.Username, creds.Password)
 		}
 	}
 }
@@ -220,6 +210,38 @@ func run() {
 	}
 	wf.SendFeedback()
 }
+
+
+type Creds struct {
+	Username string
+	Password string
+}
+
+var credsFile = os.Getenv("HOME") + "/.vpn_creds"
+
+func loadCreds() Creds {
+	var creds Creds
+
+	if fileExists(credsFile) {
+		content, _ := ioutil.ReadFile(credsFile)
+		json.Unmarshal(content, &creds)
+	}
+	return creds
+}
+
+func saveCreds(creds Creds) {
+	j, _ := json.Marshal(creds)
+	ioutil.WriteFile(credsFile, j, 0700)
+}
+
+func fileExists(filename string) bool {
+	info, err := os.Stat(filename)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return !info.IsDir()
+}
+
 
 func main() {
 	wf = aw.New()
